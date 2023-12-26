@@ -6,12 +6,12 @@ As a feature, it's able to save the csv file in AWS S3.
 <br>
 <strong>GitHub repository:</strong><br> 
 https://github.com/perlavianey/storiOnLambda<br>
-Release v.0.0: https://github.com/perlavianey/storiOnLambda/releases/tag/storiChallengeLambda
+Release v1.0.0: https://github.com/perlavianey/storiOnLambda/releases/tag/storiChallengeLambda
 <br>
-
+<br>
 <strong>Built With:</strong><br>
 <li>Golang as development language</li>
-<li>AWS as Cloud Platform (using Lambda and S3)</li>
+<li>AWS as Cloud Platform (using Lambda, S3 and Cloudwatch)</li>
 <li>HTML for the email template</li>
 <br>
 
@@ -22,9 +22,13 @@ The algorithm reads the request body, saves the specified file to S3 using [ULID
 
 <br>
 Then it makes the corresponding calculations to get the total balance, transactions per month and average debit and credit amounts and then builds a formatted email with the summary, which is sent to the customer in a pretty format. The csv file is also send as an attachment to the email: <br>
+<br>
 
 ![Alt text](screenshot_email.png?raw=true "Email screenshot")
+<br><br>
+Logs are shown in AWS Cloudwatch Console:<br>
 
+![Alt text](screenshot_cloudwatch.png?raw=true "Cloudwatch screenshot")
 
 <br>
 
