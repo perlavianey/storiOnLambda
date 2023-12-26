@@ -6,11 +6,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
-	"io/fs"
+	"log"
 	"net/smtp"
 	"os"
-	"sort"
-	"stori/database"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
@@ -28,24 +27,12 @@ type Mail struct {
 	Body    string
 }
 
-// listFiles is a function that returns a list of files in a directory
-func listFiles(directorio string) ([]fs.DirEntry, error) {
-	files, err := os.ReadDir(directorio)
-	if err != nil {
-		return []fs.DirEntry{}, err
-	}
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name() < files[j].Name()
-	})
-	return files, nil
-}
-
 // convertTransactions is a function that converts a csv file to an array of database.Transaction
-func convertTransactions(data [][]string, ulid string) []database.Transaction {
-	var transactions []database.Transaction
+func convertTransactions(data [][]string, ulid string) []Transaction {
+	var transactions []Transaction
 	for i, line := range data {
 		if i > 0 { // omit header line
-			var rec database.Transaction
+			var rec Transaction
 			for j, field := range line {
 				switch j {
 				case 0:
@@ -55,13 +42,8 @@ func convertTransactions(data [][]string, ulid string) []database.Transaction {
 					rec.Date = dateTime.Format("2006-01-02")
 				case 2:
 					rec.Amount, _ = strconv.ParseFloat(field, 64)
-				case 3:
-					rec.IdAccount = field
 				}
 			}
-			rec.Filename = ulid
-			t := time.Now()
-			rec.Timestamp = getUTCTimeFormat(t)
 			transactions = append(transactions, rec)
 		}
 
@@ -78,7 +60,7 @@ func getUTCTimeFormat(date time.Time) string {
 }
 
 // calculateTotalBalance is a function that calculates the total balance of a list of transactions
-func calculateTotalBalance(transactionList []database.Transaction) (total float64, e error) {
+func calculateTotalBalance(transactionList []Transaction) (total float64, e error) {
 	for _, transaction := range transactionList {
 		total += transaction.Amount
 	}
@@ -86,7 +68,7 @@ func calculateTotalBalance(transactionList []database.Transaction) (total float6
 }
 
 // calculateTransactionsPerMonth is a function that divides a list of transactions by month and returns them into a map of transactions grouped by month
-func calculateTransactionsPerMonth(transactionList []database.Transaction) (transactionsPerMonth map[string]int, e error) {
+func calculateTransactionsPerMonth(transactionList []Transaction) (transactionsPerMonth map[string]int, e error) {
 	transactionsPerMonth = make(map[string]int)
 
 	for _, transaction := range transactionList {
@@ -98,7 +80,7 @@ func calculateTransactionsPerMonth(transactionList []database.Transaction) (tran
 }
 
 // calculateAverageDebit is a function that calculates the average debit amount of a list of transactions
-func calculateAverageDebit(transactionList []database.Transaction) (average float64, e error) {
+func calculateAverageDebit(transactionList []Transaction) (average float64, e error) {
 	var counter int
 	for _, transaction := range transactionList {
 		if transaction.Amount < 0 {
@@ -111,7 +93,7 @@ func calculateAverageDebit(transactionList []database.Transaction) (average floa
 }
 
 // calculateAverageCredit is a function that calculates the average credit amount of a list of transactions
-func calculateAverageCredit(transactionList []database.Transaction) (average float64, e error) {
+func calculateAverageCredit(transactionList []Transaction) (average float64, e error) {
 	var counter int
 	for _, transaction := range transactionList {
 		if transaction.Amount > 0 {
@@ -124,7 +106,7 @@ func calculateAverageCredit(transactionList []database.Transaction) (average flo
 }
 
 // getSummary is a function that calculates the summary of a list of transactions and returns them into a slice of strings, ready to print on the email
-func getSummary(transactionList []database.Transaction) ([]string, error) {
+func getSummary(transactionList []Transaction) ([]string, error) {
 	var summary []string
 	//calculate summary
 	//calculate totalBalance
@@ -210,9 +192,13 @@ func buildMail(name string, summary []string, mail Mail, fileByte []byte) []byte
 	buf.WriteString(fmt.Sprintf("\r\n--%s\r\n", boundary))
 
 	buf.WriteString("MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n")
-	t, err := template.ParseFiles("/app/cmd/email/template.html")
+	err := getFileFromS3()
 	if err != nil {
-		fmt.Println(err)
+		log.Print(err)
+	}
+	t, err := template.ParseFiles("/tmp/template.html")
+	if err != nil {
+		log.Print(err)
 	}
 	t.Execute(&buf, struct {
 		Name    string
@@ -238,10 +224,35 @@ func buildMail(name string, summary []string, mail Mail, fileByte []byte) []byte
 	return buf.Bytes()
 }
 
+// getFileFromS3 is a function that gets the template.html file from S3 and saves it locally in /tmp/template.html
+func getFileFromS3() (err error) {
+	sess, _ := session.NewSession(&aws.Config{
+		Region: aws.String("us-east-2")},
+	)
+	downloader := s3manager.NewDownloader(sess)
+
+	file, err := os.Create("/tmp/template.html")
+	if err != nil {
+		log.Fatal("Unable to create template in os:", err)
+		return err
+	}
+	_, err = downloader.Download(file,
+		&s3.GetObjectInput{
+			Bucket: aws.String("email-templates-pv"),
+			Key:    aws.String("template.html"),
+		})
+	if err != nil {
+		log.Fatal("Unable to download template:", err)
+		return err
+	}
+
+	return
+}
+
 // uploadFileToS3 is a function that uploads a file to an S3 bucket
 func uploadFileToS3(fileIdentifier string, fileByte []byte) error {
-	KeyId := os.Getenv("AWS_ACCESS_KEY_ID")
-	SecretKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	KeyId := os.Getenv("ACCESS_KEY_ID")
+	SecretKey := os.Getenv("SECRET_ACCESS_KEY")
 	s3Config := &aws.Config{
 		Region:      aws.String("us-east-2"),
 		Credentials: credentials.NewStaticCredentials(KeyId, SecretKey, ""),

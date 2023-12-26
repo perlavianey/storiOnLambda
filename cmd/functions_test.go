@@ -2,7 +2,6 @@ package main
 
 import (
 	"reflect"
-	"stori/database"
 	"testing"
 	"time"
 )
@@ -24,7 +23,7 @@ func TestConvertTransactions(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want []database.Transaction
+		want []Transaction
 	}{
 		{
 			name: "basic conversion",
@@ -35,14 +34,11 @@ func TestConvertTransactions(t *testing.T) {
 				},
 				ulid: "1234567890",
 			},
-			want: []database.Transaction{
+			want: []Transaction{
 				{
-					Id:        "1",
-					Date:      "2023-02-01",
-					Amount:    123.45,
-					IdAccount: "123456789",
-					Filename:  "1234567890",
-					Timestamp: "2023-02-01T12:00:00.000Z07:00",
+					Id:     "1",
+					Date:   "2023-02-01",
+					Amount: 123.45,
 				},
 			},
 		},
@@ -59,7 +55,7 @@ func TestConvertTransactions(t *testing.T) {
 
 func Test_getSummary(t *testing.T) {
 	type args struct {
-		transactionList []database.Transaction
+		transactionList []Transaction
 	}
 	tests := []struct {
 		name    string
@@ -70,28 +66,19 @@ func Test_getSummary(t *testing.T) {
 		{
 			name: "Testing get Summary",
 			args: args{
-				transactionList: []database.Transaction{
+				transactionList: []Transaction{
 					{
-						Id:        "1",
-						Date:      "2023-02-01",
-						Amount:    10.0,
-						IdAccount: "123456789",
-						Filename:  "1234567890",
-						Timestamp: "2023-12-24T12:00:00.000Z07:00",
+						Id:     "1",
+						Date:   "2023-02-01",
+						Amount: 10.0,
 					}, {
-						Id:        "2",
-						Date:      "2023-02-01",
-						Amount:    12.45,
-						IdAccount: "123456789",
-						Filename:  "1234567890",
-						Timestamp: "2023-12-24T12:00:00.000Z07:00",
+						Id:     "2",
+						Date:   "2023-02-01",
+						Amount: 12.45,
 					}, {
-						Id:        "3",
-						Date:      "2023-03-01",
-						Amount:    -1.80,
-						IdAccount: "123456789",
-						Filename:  "1234567890",
-						Timestamp: "2023-12-24T12:00:00.000Z07:00",
+						Id:     "3",
+						Date:   "2023-03-01",
+						Amount: -1.80,
 					},
 				},
 			},

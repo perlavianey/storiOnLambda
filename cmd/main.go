@@ -1,89 +1,118 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/csv"
+	"encoding/json"
 	"log"
-	"os"
-	"stori/database"
 
+	"context"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/oklog/ulid/v2"
 )
 
+type Input struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	File  string `json:"file"`
+}
+
+type Transaction struct {
+	Id     string
+	Date   string
+	Amount float64
+}
+
 func main() {
-	var transactionList []database.Transaction
+	lambda.Start(handleRequest)
+}
 
-	// get files stores in mounted directory /app/cmd/directory
-	directory := "/app/cmd/directory"
-	catFiles, err := listFiles(directory)
+// handleRequest is a function that handles a request to the Lambda function
+func handleRequest(ctx context.Context, request events.APIGatewayProxyRequest) (response events.APIGatewayProxyResponse, err error) {
+	var input Input
+	if err = json.Unmarshal([]byte(request.Body), &input); err != nil {
+		log.Print("Error to unmarshal request body: ", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error to unmarshal request body: " + err.Error(),
+		}
+		return
+	}
+
+	decodedFile, err := base64.StdEncoding.DecodeString(input.File)
 	if err != nil {
-		log.Fatal("Error listing files in " + directory + ":" + err.Error())
+		log.Print("Error to decode base64 file: ", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error to decode base64 file: " + err.Error(),
+		}
+		return
 	}
 
-	//iterate over files
-	for _, archivo := range catFiles {
-		fileIdentifier := ulid.Make()
-		fileName := directory + "/" + archivo.Name()
-		f, err := os.Open(fileName)
-		if err != nil {
-			log.Fatal("Error opening file "+fileName+":", err)
+	// generate file identifier ULID
+	fileIdentifier := ulid.Make()
+
+	// read csv values using csv.Reader
+	reader := csv.NewReader(bytes.NewBuffer(decodedFile))
+	data, err := reader.ReadAll()
+	if err != nil {
+		log.Print("Error getting data from csv: ", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error getting data from csv: " + err.Error(),
 		}
-
-		defer f.Close()
-
-		//read csv file for attachment
-		fileByte, err := os.ReadFile(fileName)
-		if err != nil {
-			log.Fatal("Error reading file "+fileName+":", err)
-		}
-
-		// read csv values using csv.Reader
-		csvReader := csv.NewReader(f)
-		data, err := csvReader.ReadAll()
-		if err != nil {
-			log.Fatal("Error getting data from csv:", err)
-		}
-
-		//upload file to S3
-		err = uploadFileToS3(fileIdentifier.String(), fileByte)
-		if err != nil {
-			log.Print("Error to upload file", fileIdentifier, "to S3:", err)
-		}
-
-		// convert records to array of structs
-		transactionList = convertTransactions(data, fileIdentifier.String())
-
-		//save the data to the database
-		counterError := 0
-		for _, transaction := range transactionList {
-			err := database.InsertRequest(pgclient, transaction)
-			if err != nil {
-				log.Print("Error saving record of ", fileIdentifier, " to database:", err)
-				counterError++
-			}
-		}
-
-		//if any error occurs, print the error with the file identifier so the system administrator can make the corresponding troubleshooting
-		if counterError > 0 {
-			log.Print("There were errors saving data. Please check process of file ", fileIdentifier)
-		}
-
-		//get customer's name and email
-		name, email, err := database.GetAccountData(pgclient, transactionList[0].IdAccount)
-		if err != nil {
-			log.Print("Error getting customer's name and email: ", err)
-			return
-		}
-
-		//get Summary
-		summary, err := getSummary(transactionList)
-		if err != nil {
-			log.Fatal("Error getting summary for customer: ", err)
-		}
-
-		//send email
-		err = sendEmail(name, email, summary, fileByte)
-		if err != nil {
-			log.Fatal("Error to send email: ", err)
-		}
+		return
 	}
+
+	//upload file to S3
+	err = uploadFileToS3(fileIdentifier.String(), decodedFile)
+	if err != nil {
+		log.Print("Error to upload file ", fileIdentifier, " to S3:", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error to upload file " + fileIdentifier.String() + " to S3:" + err.Error(),
+		}
+		return
+	}
+
+	// convert records to array of structs
+	transactionList := convertTransactions(data, fileIdentifier.String())
+
+	//get Summary
+	summary, err := getSummary(transactionList)
+	if err != nil {
+		log.Print("Error getting summary for customer: ", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error getting summary for customer: " + err.Error(),
+		}
+		return
+	}
+
+	//send email
+	err = sendEmail(input.Name, input.Email, summary, decodedFile)
+	if err != nil {
+		log.Print("Error to send email: ", err)
+		response = events.APIGatewayProxyResponse{
+			StatusCode: 500,
+			Headers:    map[string]string{"Content-Type": "text/plain"},
+			Body:       "Error to send email: " + err.Error(),
+		}
+		return
+	}
+
+	response = events.APIGatewayProxyResponse{
+		StatusCode: 200,
+		Headers:    map[string]string{"Content-Type": "text/plain"},
+		Body:       "Email successfully sent",
+	}
+	return
 }
