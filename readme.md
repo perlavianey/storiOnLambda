@@ -33,9 +33,9 @@ Then it makes the corresponding calculations to get the total balance, transacti
 To run this project you need:<br>
 <ol>
 <li>To have an AWS account and be able to create a new Lambda with S3 PUTObject and GETObject permissions</li>
-<li>To have a S3 bucket named  <strong>transactions-stori-pv</strong>in that AWS account.</li>
+<li>To have a S3 bucket named  <strong>transactions-stori-pv</strong> in that AWS account.</li>
 <li>To have the AWS access key and secret access key to that AWS account.</li>
-<li>To have a S3 bucket named  <strong>email-templates-pv</strong>in that AWS account.</li>
+<li>To have a S3 bucket named  <strong>email-templates-pv</strong> in that AWS account.</li>
 </ol>
 <br>
 <strong>Usage:</strong><br>
