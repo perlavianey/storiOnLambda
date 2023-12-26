@@ -25,10 +25,6 @@ Then it makes the corresponding calculations to get the total balance, transacti
 
 ![Alt text](screenshot_email.png?raw=true "Email screenshot")
 
-<br>
-If any of the records is not stored successfully in the database, an error is logged, so the system administrator can make the corresponding troubleshooting.
-
-
 
 <br>
 
